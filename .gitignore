@@ -9,6 +9,8 @@ __pycache__/
 # Environment variables
 .env
 
+main.exe
+
 # PyInstaller
 build/
 dist/
