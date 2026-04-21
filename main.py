@@ -1,5 +1,6 @@
 import email
 import imaplib
+import socket
 import time
 from email.header import decode_header
 from email.utils import  parseaddr
@@ -33,36 +34,46 @@ def save_history(id_set):
 
 
 def get_emails():
-    with imaplib.IMAP4_SSL('poczta.o2.pl',993) as server:
+    try:
+        with imaplib.IMAP4_SSL('poczta.o2.pl', 993) as server:
 
-        server.login(os.environ.get('email'),os.environ.get('password'))
-        server.select("INBOX")
+            server.login(os.environ.get('email'), os.environ.get('password'))
+            server.select("INBOX")
 
-        status, messages = server.uid('search',None,"ALL")
-        ids=messages[0].split()
+            status, messages = server.uid('search', None, "ALL")
+            ids = messages[0].split()
 
-        messages=[]
-        current_ids=load_history()
-        if ids:
-            for latest_id in reversed(ids[-10:]):
-                if latest_id.decode() not in current_ids:
-                    status, data = server.uid('fetch',latest_id,"(RFC822)")
+            messages = []
+            current_ids = load_history()
 
-                    for response_part in data:
-                        if isinstance(response_part,tuple):
-                            msg = email.message_from_bytes(response_part[1])
-                            subject =decode_header(msg["Subject"])[0][0]
-                            if isinstance(subject,bytes):
-                                subject = subject.decode()
+            if ids:
+                for latest_id in reversed(ids[-10:]):
+                    if latest_id.decode() not in current_ids:
+                        status, data = server.uid('fetch', latest_id, "(RFC822)")
 
-                            messages.append({
-                                'sender':parseaddr(msg.get("From"))[0],
-                                'subject':subject
-                            })
-            save_history([coded_id.decode() for coded_id in ids])
+                        for response_part in data:
+                            if isinstance(response_part, tuple):
+                                msg = email.message_from_bytes(response_part[1])
+                                subject = decode_header(msg["Subject"])[0][0]
+                                if isinstance(subject, bytes):
+                                    encoding = decode_header(msg["Subject"])[0][1]
+                                    encoding = 'utf-8' if encoding is None else encoding
+                                    try:
+                                        subject = subject.decode(encoding)
+                                    except (UnicodeDecodeError, LookupError):
+                                        subject = subject.decode('iso-8859-2', errors='replace')
 
-        server.logout()
-        return messages if messages else None
+                                messages.append({
+                                    'sender': parseaddr(msg.get("From"))[0],
+                                    'subject': subject
+                                })
+                save_history([coded_id.decode() for coded_id in ids])
+
+            server.logout()
+            return messages if messages else None
+    except (socket.gaierror, ConnectionError, imaplib.IMAP4.error) as e:
+        print(f"Błąd połączenia lub logowania: {e}")
+        return None
 
 def show_notifications():
     emails = get_emails()
